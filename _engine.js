@@ -53,16 +53,32 @@ if('speechSynthesis' in window){
   loadVoices();
   speechSynthesis.onvoiceschanged = loadVoices;
 }
+/* Prefer the most natural-sounding voice available for a language. Modern
+   browsers/OSes often expose several voices per language — legacy "compact"
+   robotic ones alongside newer neural/"Natural"/"Online"/"Premium" ones that
+   sound much closer to a real person. There's no free way to guarantee an
+   actual recorded human voice in a static web page, so this picks the best
+   the visitor's own browser happens to offer instead of the first match. */
+var NATURAL_VOICE_HINTS = ['natural', 'neural', 'online', 'premium', 'enhanced', 'siri', 'google'];
+function voiceQualityScore(v){
+  var name = (v.name || '').toLowerCase();
+  for(var i=0;i<NATURAL_VOICE_HINTS.length;i++){
+    if(name.indexOf(NATURAL_VOICE_HINTS[i]) !== -1) return NATURAL_VOICE_HINTS.length - i;
+  }
+  return 0;
+}
 function pickVoice(lang){
   if(!voices || !voices.length) return null;
   var exact = voices.filter(function(v){ return v.lang === lang; });
-  if(exact.length) return exact[0];
-  var base = lang.split('-')[0];
-  var partial = voices.filter(function(v){ return v.lang && v.lang.indexOf(base) === 0; });
-  if(partial.length) return partial[0];
-  return null;
+  var pool = exact.length ? exact : voices.filter(function(v){
+    var base = lang.split('-')[0];
+    return v.lang && v.lang.indexOf(base) === 0;
+  });
+  if(!pool.length) return null;
+  pool = pool.slice().sort(function(a,b){ return voiceQualityScore(b) - voiceQualityScore(a); });
+  return pool[0];
 }
-function speak(text, lang, rate){
+function speak(text, lang, rate, pitch){
   return new Promise(function(resolve){
     if(muted || !('speechSynthesis' in window)){ resolve(); return; }
     try{
@@ -71,7 +87,11 @@ function speak(text, lang, rate){
       var v = pickVoice(lang);
       if(v) u.voice = v;
       u.rate = rate || 0.85;
-      u.pitch = 1.15;
+      u.pitch = (pitch != null) ? pitch : 1.15;
+      /* explicit volume keeps English and Chinese voices at the same
+         loudness — different OS/browser voice packs otherwise default
+         to noticeably different volumes for en-US vs zh-CN. */
+      u.volume = 1.0;
       var done = false;
       var finish = function(){ if(done) return; done = true; resolve(); };
       u.onend = finish;
@@ -310,6 +330,16 @@ function showModal(opts){
 }
 
 /* ============ NAVIGATION ============ */
+/* uiToken invalidates any in-flight setTimeout-scheduled speech/progression
+   (next-question timers, milestone-modal timers, song note ticks) the moment
+   the user navigates away, so audio never "leaks" onto a screen/tab the
+   child has already left. */
+var uiToken = 0;
+function bumpUiToken(){
+  uiToken++;
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+  return uiToken;
+}
 function goScreen(name){
   var songsScreen = document.getElementById('screen-songs');
   if(songsScreen.classList.contains('active') && name !== 'songs'){
@@ -318,11 +348,25 @@ function goScreen(name){
     document.getElementById('songGrid').style.display = '';
     currentSong = null;
   }
+  var poemsScreen = document.getElementById('screen-poems');
+  if(poemsScreen.classList.contains('active') && name !== 'poems'){
+    document.getElementById('poemPlayer').style.display = 'none';
+    document.getElementById('poemGrid').style.display = '';
+    currentPoem = null;
+  }
+  var storiesScreen = document.getElementById('screen-stories');
+  if(storiesScreen.classList.contains('active') && name !== 'stories'){
+    document.getElementById('storyPlayer').style.display = 'none';
+    document.getElementById('storyGrid').style.display = '';
+    currentStory = null;
+  }
+  bumpUiToken();
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
   document.getElementById('screen-' + name).classList.add('active');
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function switchLetterTab(tab){
+  bumpUiToken();
   document.querySelectorAll('[data-lettab]').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-lettab') === tab); });
   document.getElementById('letterLearn').style.display = (tab === 'learn') ? '' : 'none';
   document.getElementById('letterQuiz').style.display = (tab === 'quiz') ? '' : 'none';
@@ -333,6 +377,7 @@ function switchLetterTab(tab){
   if(tab === 'case') nextCaseQuiz();
 }
 function switchNumTab(tab){
+  bumpUiToken();
   document.querySelectorAll('[data-numtab]').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-numtab') === tab); });
   document.getElementById('numLearn').style.display = (tab === 'learn') ? '' : 'none';
   document.getElementById('numCount').style.display = (tab === 'count') ? '' : 'none';
@@ -495,8 +540,10 @@ function handleLetterAnswer(opt, btn){
     speak('Great job! ' + currentLetterTarget.word, 'en-US', 0.9);
     speak('太棒了！', 'zh-CN', 0.95);
     var isMilestone = letterStreak > 0 && letterStreak % 10 === 0;
+    var letterAnswerToken = uiToken;
     if(isMilestone){
       setTimeout(function(){
+        if(letterAnswerToken !== uiToken) return;
         showModal({
           mascot:'🦊', title:'连续答对 ' + letterStreak + ' 题！',
           msg:'你的字母小游戏玩得真棒！接下来想做什么？',
@@ -509,7 +556,10 @@ function handleLetterAnswer(opt, btn){
       }, 700);
     } else {
       if(letterStreak % 5 === 0) launchConfetti(90);
-      setTimeout(nextLetterQuiz, 1500);
+      setTimeout(function(){
+        if(letterAnswerToken !== uiToken) return;
+        nextLetterQuiz();
+      }, 1500);
     }
   } else {
     btn.classList.add('wrong');
@@ -558,7 +608,9 @@ function handleLetterOrderClick(item, btn){
     if(letterOrderNextIdx >= LETTERS.length){
       document.getElementById('letterOrderStatus').textContent = '🎉 全部找齐啦！';
       addStars(10);
+      var orderDoneToken = uiToken;
       setTimeout(function(){
+        if(orderDoneToken !== uiToken) return;
         showModal({
           mascot:'🏆', title:'字母排队完成！',
           msg:'从 A 到 Z 都找齐啦，真是了不起！',
@@ -652,8 +704,10 @@ function handleCaseAnswer(opt, btn){
     speak('Great match!', 'en-US', 0.9);
     speak('配对成功！', 'zh-CN', 0.95);
     var isMilestone = caseStreak > 0 && caseStreak % 10 === 0;
+    var caseAnswerToken = uiToken;
     if(isMilestone){
       setTimeout(function(){
+        if(caseAnswerToken !== uiToken) return;
         showModal({
           mascot:'🐸', title:'连续答对 ' + caseStreak + ' 题！',
           msg:'大小写配对玩得真棒！接下来想做什么？',
@@ -666,7 +720,10 @@ function handleCaseAnswer(opt, btn){
       }, 700);
     } else {
       if(caseStreak % 5 === 0) launchConfetti(90);
-      setTimeout(nextCaseQuiz, 1500);
+      setTimeout(function(){
+        if(caseAnswerToken !== uiToken) return;
+        nextCaseQuiz();
+      }, 1500);
     }
   } else {
     btn.classList.add('wrong');
@@ -834,8 +891,10 @@ function handleCountAnswer(n, btn){
     speak(numberToEnglish(currentCount), 'en-US', 0.85);
     speak('答对啦，一共是 ' + currentCount + ' 个！', 'zh-CN', 0.95);
     var isMilestone = countStreak > 0 && countStreak % 10 === 0;
+    var countAnswerToken = uiToken;
     if(isMilestone){
       setTimeout(function(){
+        if(countAnswerToken !== uiToken) return;
         showModal({
           mascot:'🐨', title:'连续答对 ' + countStreak + ' 题！',
           msg:'数数小能手！接下来想做什么？',
@@ -848,7 +907,10 @@ function handleCountAnswer(n, btn){
       }, 700);
     } else {
       if(countStreak % 5 === 0) launchConfetti(90);
-      setTimeout(nextCountQuiz, 1500);
+      setTimeout(function(){
+        if(countAnswerToken !== uiToken) return;
+        nextCountQuiz();
+      }, 1500);
     }
   } else {
     btn.classList.add('wrong');
@@ -946,7 +1008,9 @@ function handleGridClick(n, btn){
         }});
       }
       actions.push({label:'🏠 回首页', onClick:function(){ goScreen('home'); }});
+      var gridDoneToken = uiToken;
       setTimeout(function(){
+        if(gridDoneToken !== uiToken) return;
         showModal({
           mascot:'🏆',
           title: justUnlocked ? '太厉害了，解锁新范围！' : '数字连线完成！',
@@ -1072,8 +1136,10 @@ function handleHearAnswer(n, btn){
       speak('答对了！', 'zh-CN', 0.95);
     }
     var isMilestone = hearStreak > 0 && hearStreak % 10 === 0;
+    var hearAnswerToken = uiToken;
     if(isMilestone){
       setTimeout(function(){
+        if(hearAnswerToken !== uiToken) return;
         showModal({
           mascot:'🐧', title:'连续答对 ' + hearStreak + ' 题！',
           msg:'听音辨数字玩得真好！要不要换个更大的范围试试？',
@@ -1086,7 +1152,10 @@ function handleHearAnswer(n, btn){
       }, 700);
     } else {
       if(hearStreak % 5 === 0) launchConfetti(90);
-      setTimeout(nextHearQuiz, 1500);
+      setTimeout(function(){
+        if(hearAnswerToken !== uiToken) return;
+        nextHearQuiz();
+      }, 1500);
     }
   } else {
     btn.classList.add('wrong');
@@ -1176,6 +1245,189 @@ var SONGS = [
       {cn:'老太婆快快来，', en:'Grandma, come quickly,', notes:['G4','A4','C5','D5','E5']},
       {cn:'一起使劲拔萝卜。', en:"Let's pull the turnip together.", notes:['C5','D5','E5','F5','G5','C5']}
     ]
+  },
+  {
+    id:'hickory', emoji:'🐭', titleEn:'Hickory Dickory Dock', titleCn:'嘀嗒嘀嗒钟', lang:'en',
+    lines:[
+      {en:'Hickory dickory dock,', cn:'嘀嗒嘀嗒，时钟响，', notes:['C5','D5','E5','F5','G5']},
+      {en:'The mouse ran up the clock.', cn:'小老鼠，爬上钟，', notes:['G5','A5','G5','F5','E5','D5']},
+      {en:'The clock struck one,', cn:'钟敲一下，', notes:['C6','B5','A5']},
+      {en:'The mouse ran down,', cn:'老鼠跑下来，', notes:['G5','F5','E5','D5']},
+      {en:'Hickory dickory dock.', cn:'嘀嗒嘀嗒钟。', notes:['C5','D5','E5','C5']}
+    ]
+  },
+  {
+    id:'jackjill', emoji:'🪣', titleEn:'Jack and Jill', titleCn:'杰克和吉尔', lang:'en',
+    lines:[
+      {en:'Jack and Jill went up the hill,', cn:'杰克和吉尔，一起上山坡，', notes:['C5','D5','E5','F5','G5','A5']},
+      {en:'To fetch a pail of water.', cn:'去打一桶水。', notes:['A5','G5','F5','E5']},
+      {en:'Jack fell down and broke his crown,', cn:'杰克摔了一跤，', notes:['G5','F5','E5','D5','C5']},
+      {en:'And Jill came tumbling after.', cn:'吉尔也跟着摔倒啦。', notes:['C5','D5','E5','F5']}
+    ]
+  },
+  {
+    id:'humpty', emoji:'🥚', titleEn:'Humpty Dumpty', titleCn:'蛋头先生', lang:'en',
+    lines:[
+      {en:'Humpty Dumpty sat on a wall,', cn:'蛋头先生坐墙上，', notes:['C5','C5','G5','G5','A5']},
+      {en:'Humpty Dumpty had a great fall.', cn:'一不小心摔下墙。', notes:['A5','G5','F5','F5','E5']},
+      {en:"All the king's horses and all the king's men,", cn:'国王的马和人都来了，', notes:['E5','D5','D5','C5','C5']},
+      {en:"Couldn't put Humpty together again.", cn:'也没办法把他拼回去。', notes:['D5','E5','F5','G5','C5']}
+    ]
+  },
+  {
+    id:'marylamb', emoji:'🐑', titleEn:'Mary Had a Little Lamb', titleCn:'玛丽有只小羊羔', lang:'en',
+    lines:[
+      {en:'Mary had a little lamb,', cn:'玛丽有一只小羊羔，', notes:['E5','D5','C5','D5','E5']},
+      {en:'Its fleece was white as snow.', cn:'它的毛像雪一样白。', notes:['E5','E5','E5']},
+      {en:'And everywhere that Mary went,', cn:'玛丽走到哪里，', notes:['D5','D5','D5']},
+      {en:'The lamb was sure to go.', cn:'小羊就跟到哪里。', notes:['E5','G5','G5']}
+    ]
+  },
+  {
+    id:'muffet', emoji:'🕷️', titleEn:'Little Miss Muffet', titleCn:'小玛菲特小姐', lang:'en',
+    lines:[
+      {en:'Little Miss Muffet sat on a tuffet,', cn:'小玛菲特坐在小凳子上，', notes:['C5','D5','E5','F5','G5','A5']},
+      {en:'Eating her curds and whey.', cn:'吃着她的奶酪。', notes:['A5','G5','F5','E5']},
+      {en:'Along came a spider,', cn:'一只蜘蛛爬过来，', notes:['G5','F5','E5']},
+      {en:'Who sat down beside her,', cn:'坐在她旁边，', notes:['E5','D5','C5']},
+      {en:'And frightened Miss Muffet away.', cn:'把玛菲特小姐吓跑了。', notes:['D5','E5','F5','G5','C5']}
+    ]
+  },
+  {
+    id:'raingo', emoji:'🌧️', titleEn:'Rain Rain Go Away', titleCn:'雨儿雨儿快走开', lang:'en',
+    lines:[
+      {en:'Rain, rain, go away,', cn:'雨儿雨儿快走开，', notes:['G5','G5','A5','A5','G5']},
+      {en:'Come again another day.', cn:'改天再来吧。', notes:['F5','F5','E5','E5','D5']},
+      {en:'Little children want to play,', cn:'小朋友们想出去玩，', notes:['E5','F5','G5']},
+      {en:'Rain, rain, go away.', cn:'雨儿雨儿快走开。', notes:['G5','F5','E5','D5','C5']}
+    ]
+  },
+  {
+    id:'oldman', emoji:'🎵', titleEn:'This Old Man', titleCn:'这个老人', lang:'en',
+    lines:[
+      {en:'This old man, he played one,', cn:'这个老人，他打一，', notes:['G5','G5','G5','E5','G5']},
+      {en:'He played knick-knack on my thumb.', cn:'在我大拇指上敲一敲。', notes:['A5','A5','G5','E5']},
+      {en:'With a knick-knack paddywhack,', cn:'咚咚咚，敲一敲，', notes:['G5','G5','E5','C5']},
+      {en:'Give a dog a bone,', cn:'给小狗一根骨头，', notes:['D5','E5','F5','G5']},
+      {en:'This old man came rolling home.', cn:'这个老人滚着回家了。', notes:['G5','F5','E5','D5','C5']}
+    ]
+  },
+  {
+    id:'hushbaby', emoji:'🌙', titleEn:'Hush Little Baby', titleCn:'嘘宝宝别哭', lang:'en',
+    lines:[
+      {en:'Hush little baby, dont say a word,', cn:'嘘，宝宝，别说话，', notes:['C5','C5','C5','D5','E5']},
+      {en:"Mama's gonna buy you a mockingbird.", cn:'妈妈给你买只小鸟。', notes:['E5','D5','C5','D5','E5']},
+      {en:"And if that mockingbird don't sing,", cn:'如果小鸟不会唱歌，', notes:['E5','F5','G5']},
+      {en:"Mama's gonna buy you a diamond ring.", cn:'妈妈给你买个戒指。', notes:['G5','F5','E5','D5','C5']}
+    ]
+  },
+  {
+    id:'ringrosie', emoji:'🌸', titleEn:'Ring Around the Rosie', titleCn:'围着玫瑰转圈圈', lang:'en',
+    lines:[
+      {en:'Ring around the rosie,', cn:'围着玫瑰转圈圈，', notes:['C5','D5','E5','F5','G5']},
+      {en:'A pocket full of posies.', cn:'口袋装满小花花。', notes:['G5','F5','E5','D5']},
+      {en:'Ashes, ashes,', cn:'呼呼，呼呼，', notes:['E5','D5']},
+      {en:'We all fall down!', cn:'我们都坐下啦！', notes:['C5','B4','A4']}
+    ]
+  },
+  {
+    id:'itsybitsy', emoji:'🕸️', titleEn:'Itsy Bitsy Spider', titleCn:'小小蜘蛛', lang:'en',
+    lines:[
+      {en:'The itsy bitsy spider climbed up the water spout.', cn:'小小蜘蛛，爬上水管，', notes:['C5','D5','E5','F5','G5','A5']},
+      {en:'Down came the rain and washed the spider out.', cn:'雨水冲呀冲，把蜘蛛冲下来。', notes:['A5','G5','F5','E5','D5']},
+      {en:'Out came the sun and dried up all the rain,', cn:'太阳出来了，晒干了雨水，', notes:['E5','F5','G5','A5']},
+      {en:'And the itsy bitsy spider climbed up the spout again.', cn:'小小蜘蛛，又爬上了水管。', notes:['G5','F5','E5','D5','C5']}
+    ]
+  },
+  {
+    id:'diushoujuan', emoji:'🧣', titleEn:'Throw the Handkerchief', titleCn:'丢手绢', lang:'cn',
+    lines:[
+      {cn:'丢手绢，丢手绢，', en:'Throw the handkerchief, throw the handkerchief,', notes:['C5','D5','E5','C5','C5','D5','E5','C5']},
+      {cn:'轻轻地放在小朋友的后面，', en:'Gently place it behind a friend,', notes:['E5','F5','G5','A5','G5','F5','E5','D5','C5']},
+      {cn:'大家不要告诉他，', en:"Don't tell him, everyone,", notes:['G5','A5','G5','F5','E5']},
+      {cn:'快点快点抓住他。', en:'Quick, quick, catch him.', notes:['C5','D5','E5','F5','G5']}
+    ]
+  },
+  {
+    id:'zhaopengyou', emoji:'🤝', titleEn:'Looking for Friends', titleCn:'找朋友', lang:'cn',
+    lines:[
+      {cn:'找呀找呀找朋友，', en:'Looking, looking for a friend,', notes:['C5','C5','D5','D5','E5','E5','C5']},
+      {cn:'找到一个好朋友，', en:'Found myself a good friend,', notes:['F5','F5','G5','G5','A5','A5','G5']},
+      {cn:'敬个礼，握握手，', en:'Salute and shake hands,', notes:['F5','F5','E5','E5','D5','D5','C5']},
+      {cn:'你是我的好朋友。', en:'You are my good friend.', notes:['C5','D5','E5','F5','G5','C5']}
+    ]
+  },
+  {
+    id:'paipaizuo', emoji:'🍎', titleEn:'Sitting in a Row', titleCn:'排排坐', lang:'cn',
+    lines:[
+      {cn:'排排坐，', en:'Sitting in a row,', notes:['C5','D5','E5']},
+      {cn:'吃果果，', en:'Eating fruit,', notes:['E5','D5','C5']},
+      {cn:'幼儿园里，', en:'At kindergarten,', notes:['C5','D5','E5','F5']},
+      {cn:'朋友多。', en:'There are many friends.', notes:['G5','F5','E5']}
+    ]
+  },
+  {
+    id:'ladaju', emoji:'🪚', titleEn:'Pulling the Big Saw', titleCn:'拉大锯', lang:'cn',
+    lines:[
+      {cn:'拉大锯，扯大锯，', en:'Pull the big saw, pull the big saw,', notes:['C5','C5','D5','D5','E5','E5','C5']},
+      {cn:'姥姥家，唱大戏，', en:"At grandma's house, singing opera,", notes:['E5','F5','G5','G5','F5','E5']},
+      {cn:'接闺女，请女婿，', en:"Inviting daughter and son-in-law,", notes:['D5','D5','E5','E5','F5']},
+      {cn:'小外孙，也要去。', en:'The little grandchild wants to go too.', notes:['G5','F5','E5','D5','C5']}
+    ]
+  },
+  {
+    id:'xiaolaoshu', emoji:'🐁', titleEn:'Little Mouse on the Lamp Stand', titleCn:'小老鼠上灯台', lang:'cn',
+    lines:[
+      {cn:'小老鼠，上灯台，', en:'Little mouse climbed the lamp stand,', notes:['C5','D5','E5','D5','C5']},
+      {cn:'偷油吃，下不来，', en:'Stole some oil, could not get down,', notes:['E5','F5','G5','F5','E5']},
+      {cn:'吱吱吱，叫奶奶，', en:'Squeak squeak, calling grandma,', notes:['G5','A5','G5','F5','E5']},
+      {cn:'奶奶抱它下不来。', en:"Grandma couldn't help it down.", notes:['D5','E5','F5','G5','C5']}
+    ]
+  },
+  {
+    id:'yaoayao', emoji:'🚣', titleEn:'Rocking to Grandma\'s Bridge', titleCn:'摇啊摇', lang:'cn',
+    lines:[
+      {cn:'摇啊摇，', en:'Rocking, rocking,', notes:['C5','D5','E5']},
+      {cn:'摇到外婆桥，', en:"Rocking to grandma's bridge,", notes:['E5','F5','G5','A5']},
+      {cn:'外婆夸我好宝宝，', en:'Grandma says I am a good baby,', notes:['A5','G5','F5','E5','D5']},
+      {cn:'一摇摇到外婆桥。', en:"Rocking all the way to grandma's bridge.", notes:['C5','D5','E5','F5','C5']}
+    ]
+  },
+  {
+    id:'xiaobaitu', emoji:'🐰', titleEn:'Little White Rabbit', titleCn:'小白兔白又白', lang:'cn',
+    lines:[
+      {cn:'小白兔，白又白，', en:'Little white rabbit, so white,', notes:['C5','C5','D5','D5','E5']},
+      {cn:'两只耳朵竖起来，', en:'Two ears stand up straight,', notes:['E5','F5','G5','A5','G5']},
+      {cn:'爱吃萝卜爱吃菜，', en:'Loves radish, loves vegetables,', notes:['F5','F5','E5','E5','D5']},
+      {cn:'蹦蹦跳跳真可爱。', en:'Hopping and jumping, so cute.', notes:['C5','D5','E5','F5','C5']}
+    ]
+  },
+  {
+    id:'dagongji', emoji:'🐓', titleEn:'The Big Rooster', titleCn:'大公鸡', lang:'cn',
+    lines:[
+      {cn:'大公鸡，真美丽，', en:'Big rooster, so beautiful,', notes:['C5','D5','E5','F5','G5']},
+      {cn:'红红的鸡冠花花衣，', en:'Red comb and colorful feathers,', notes:['G5','F5','E5','D5','C5']},
+      {cn:'每天早上喔喔叫，', en:'Every morning it crows cock-a-doodle-doo,', notes:['E5','F5','G5','A5']},
+      {cn:'叫我早早起。', en:'Waking me up early.', notes:['G5','F5','E5','D5','C5']}
+    ]
+  },
+  {
+    id:'yueliangzou', emoji:'🌕', titleEn:'The Moon Walks With Me', titleCn:'月亮走我也走', lang:'cn',
+    lines:[
+      {cn:'月亮走，', en:'The moon walks,', notes:['C5','D5','E5']},
+      {cn:'我也走，', en:'I walk too,', notes:['E5','D5','C5']},
+      {cn:'我给月亮，', en:'I give the moon,', notes:['C5','D5','E5','F5']},
+      {cn:'背花篓。', en:'A basket to carry.', notes:['G5','F5','E5']}
+    ]
+  },
+  {
+    id:'shanghudashan', emoji:'🐯', titleEn:'One Two Three Four Five', titleCn:'一二三四五上山打老虎', lang:'cn',
+    lines:[
+      {cn:'一二三四五，', en:'One two three four five,', notes:['C5','D5','E5','F5','G5']},
+      {cn:'上山打老虎，', en:'Climb the mountain to hunt a tiger,', notes:['G5','A5','G5','F5','E5']},
+      {cn:'老虎没打到，', en:"Didn't catch the tiger,", notes:['E5','D5','C5','D5']},
+      {cn:'打到小松鼠。', en:'Caught a little squirrel instead.', notes:['D5','E5','F5','G5','C5']}
+    ]
   }
 ];
 
@@ -1198,12 +1450,13 @@ function renderSongGrid(){
 }
 renderSongGrid();
 
-function playNoteSeq(notes){
+function playNoteSeq(notes, expectedToken){
   return new Promise(function(resolve){
     if(!ensureAudioCtx()){ resolve(); return; }
     if(audioCtx.state === 'suspended') audioCtx.resume();
     var i = 0;
     function step(){
+      if(expectedToken !== songToken){ resolve(); return; } /* playback was stopped/replaced mid-sequence */
       if(i >= notes.length){ resolve(); return; }
       var freq = NOTE_FREQ[notes[i]];
       if(freq) playMusicNote(freq);
@@ -1235,27 +1488,69 @@ function selectSong(song){
   playSong(song);
 }
 
+/* Map a musical note to a SpeechSynthesisUtterance pitch (0-2 range) so that
+   singing each word/character "on" its note produces an actual melodic
+   contour, instead of one flat monotone sentence — this is what makes it
+   sound sung rather than recited. */
+function noteToPitch(noteName){
+  var freq = NOTE_FREQ[noteName];
+  if(!freq) return 1.15;
+  var minF = 261.63, maxF = 1046.50; /* C4 .. C6, the range used across all songs */
+  var t = (freq - minF) / (maxF - minF);
+  t = Math.max(0, Math.min(1, t));
+  return 0.8 + t * 1.1;
+}
+/* Split lyric text into the "singing units" that each get their own note/pitch:
+   Chinese is syllable-timed (one hanzi = one beat), so split by character;
+   English is split by word — not perfectly syllable-accurate, but the notes
+   array is distributed proportionally across words so the melody still rises
+   and falls in the right places. */
+function splitLyricUnits(text, lang){
+  if(lang === 'zh-CN'){
+    var cleaned = text.replace(/[，。！？、\s]/g, '');
+    return Array.from(cleaned);
+  }
+  return text.split(/\s+/).filter(function(w){ return w.length; });
+}
+function speakLineMelody(text, lang, notes, myToken){
+  var units = splitLyricUnits(text, lang);
+  if(!units.length || !notes || !notes.length){
+    return speak(text, lang, 0.85);
+  }
+  var p = Promise.resolve();
+  units.forEach(function(unit, idx){
+    var noteIdx = Math.min(notes.length - 1, Math.floor(idx * notes.length / units.length));
+    var pitch = noteToPitch(notes[noteIdx]);
+    p = p.then(function(){
+      if(myToken !== songToken) return Promise.reject('cancelled');
+      return speak(unit, lang, 0.8, pitch);
+    });
+  });
+  return p;
+}
 function playSong(song){
   var myToken = ++songToken;
   stopMusic();
   if('speechSynthesis' in window) speechSynthesis.cancel();
   var p = Promise.resolve();
+  /* short instrumental chime to signal "here comes a song" before the singing starts */
+  p = p.then(function(){
+    if(myToken !== songToken) return Promise.reject('cancelled');
+    return playNoteSeq(song.lines[0].notes.slice(0, 2), myToken);
+  });
   song.lines.forEach(function(line, idx){
     p = p.then(function(){
       if(myToken !== songToken) return Promise.reject('cancelled');
       document.querySelectorAll('.song-line').forEach(function(el){ el.classList.remove('active'); });
       var el = document.getElementById('songline-' + idx);
       if(el){ el.classList.add('active'); el.scrollIntoView({behavior:'smooth', block:'center'}); }
-      return playNoteSeq(line.notes).then(function(){
+      var primary = song.lang === 'en' ? line.en : line.cn;
+      var primaryLang = song.lang === 'en' ? 'en-US' : 'zh-CN';
+      var secondary = song.lang === 'en' ? line.cn : line.en;
+      var secondaryLang = song.lang === 'en' ? 'zh-CN' : 'en-US';
+      return speakLineMelody(primary, primaryLang, line.notes, myToken).then(function(){
         if(myToken !== songToken) return Promise.reject('cancelled');
-        var primary = song.lang === 'en' ? line.en : line.cn;
-        var primaryLang = song.lang === 'en' ? 'en-US' : 'zh-CN';
-        var secondary = song.lang === 'en' ? line.cn : line.en;
-        var secondaryLang = song.lang === 'en' ? 'zh-CN' : 'en-US';
-        return speak(primary, primaryLang, 0.85).then(function(){
-          if(myToken !== songToken) return Promise.reject('cancelled');
-          return speak(secondary, secondaryLang, 0.85);
-        });
+        return speak(secondary, secondaryLang, 0.88);
       });
     });
   });
@@ -1285,6 +1580,223 @@ document.getElementById('songStopBtn').addEventListener('click', function(){
   document.getElementById('songPlayer').style.display = 'none';
   document.getElementById('songGrid').style.display = '';
   currentSong = null;
+});
+
+/* ============ POEMS: 古诗词 ============ */
+/* Only classical Chinese poems whose authors died many centuries ago (all
+   public domain), selected for being the most commonly taught "first poems"
+   for young children in Chinese early-childhood education. */
+var POEMS = [
+  {id:'yong_e', title:'咏鹅', author:'骆宾王（唐）', lines:['鹅鹅鹅，','曲项向天歌。','白毛浮绿水，','红掌拨清波。'], meaning:'鹅鹅鹅，一只大白鹅弯着脖子对着天空唱歌。雪白的羽毛浮在绿色的水面上，红红的脚掌拨动着清澈的水波。'},
+  {id:'jingyesi', title:'静夜思', author:'李白（唐）', lines:['床前明月光，','疑是地上霜。','举头望明月，','低头思故乡。'], meaning:'床前洒满了明亮的月光，好像地上铺了一层白霜。抬起头看着天上的月亮，低下头想念远方的家乡。'},
+  {id:'chunxiao', title:'春晓', author:'孟浩然（唐）', lines:['春眠不觉晓，','处处闻啼鸟。','夜来风雨声，','花落知多少。'], meaning:'春天睡觉真舒服，不知不觉天就亮了，到处都能听到小鸟在叫。昨天夜里又刮风又下雨，不知道有多少花被吹落了。'},
+  {id:'minnong', title:'悯农', author:'李绅（唐）', lines:['锄禾日当午，','汗滴禾下土。','谁知盘中餐，','粒粒皆辛苦。'], meaning:'农民伯伯在中午的太阳下锄地，汗水一滴一滴落在禾苗下的泥土里。谁知道我们碗里的每一粒米饭，都是农民辛辛苦苦种出来的呀。'},
+  {id:'guanquelou', title:'登鹳雀楼', author:'王之涣（唐）', lines:['白日依山尽，','黄河入海流。','欲穷千里目，','更上一层楼。'], meaning:'太阳靠着山慢慢落下去，黄河的水流向大海。想要看得更远更远，那就要再爬上一层楼。'},
+  {id:'hua', title:'画', author:'王维（唐，传）', lines:['远看山有色，','近听水无声。','春去花还在，','人来鸟不惊。'], meaning:'远远看去山是有颜色的，走近听水却没有声音。这是因为这是一幅画呀！画里的春天过去了花还开着，画里的人走近了小鸟也不会被吓跑。'},
+  {id:'yongliu', title:'咏柳', author:'贺知章（唐）', lines:['碧玉妆成一树高，','万条垂下绿丝绦。','不知细叶谁裁出，','二月春风似剪刀。'], meaning:'柳树像用碧玉打扮成的一样高高的，垂下来的柳条像绿色的丝带。不知道这些细细的叶子是谁剪出来的，原来是二月的春风，它就像一把神奇的剪刀。'},
+  {id:'jiangnan', title:'江南', author:'汉乐府（汉代）', lines:['江南可采莲，','莲叶何田田。','鱼戏莲叶间。'], meaning:'江南是采莲子的好地方，莲叶长得多茂盛呀。小鱼儿在莲叶中间快乐地游来游去。'}
+];
+
+var currentPoem = null;
+
+function renderPoemGrid(){
+  var grid = document.getElementById('poemGrid');
+  grid.innerHTML = '';
+  POEMS.forEach(function(poem){
+    var card = document.createElement('div');
+    card.className = 'letter-card';
+    card.innerHTML =
+      '<span class="em">📜</span>' +
+      '<div class="word">' + poem.title + '</div>' +
+      '<div class="cn">' + poem.author + '</div>';
+    card.addEventListener('click', function(){ selectPoem(poem); });
+    grid.appendChild(card);
+  });
+}
+renderPoemGrid();
+
+function selectPoem(poem){
+  currentPoem = poem;
+  document.getElementById('poemGrid').style.display = 'none';
+  var player = document.getElementById('poemPlayer');
+  player.style.display = '';
+  document.getElementById('poemTitleLine').innerHTML =
+    '<div style="font-size:22px; font-weight:bold; color:var(--pink-d);">' + poem.title + '</div>' +
+    '<div class="poem-meta">' + poem.author + '</div>';
+  var box = document.getElementById('poemLinesBox');
+  box.innerHTML = '';
+  poem.lines.forEach(function(line, idx){
+    var d = document.createElement('div');
+    d.className = 'poem-line';
+    d.id = 'poemline-' + idx;
+    d.textContent = line;
+    box.appendChild(d);
+  });
+  var meaningBox = document.getElementById('poemMeaningBox');
+  meaningBox.style.display = 'none';
+  meaningBox.textContent = '';
+  reactMascot('poemMascot', 'happy', 'poemBubble', '一起读古诗吧～');
+  playPoem(poem);
+}
+
+function playPoem(poem){
+  var myToken = uiToken;
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+  var p = Promise.resolve();
+  poem.lines.forEach(function(line, idx){
+    p = p.then(function(){
+      if(myToken !== uiToken) return Promise.reject('cancelled');
+      document.querySelectorAll('.poem-line').forEach(function(el){ el.classList.remove('active'); });
+      var el = document.getElementById('poemline-' + idx);
+      if(el){ el.classList.add('active'); }
+      return speak(line, 'zh-CN', 0.72);
+    });
+  });
+  p.then(function(){
+    if(myToken !== uiToken) return;
+    document.querySelectorAll('.poem-line').forEach(function(el){ el.classList.remove('active'); });
+    addStars(2);
+    launchConfetti(60);
+    reactMascot('poemMascot', 'happy', 'poemBubble', '读完啦，真棒！🎉');
+  }).catch(function(){ /* cancelled by navigation, ignore */ });
+}
+
+document.getElementById('poemReplayBtn').addEventListener('click', function(){
+  if(currentPoem) playPoem(currentPoem);
+});
+document.getElementById('poemMeaningBtn').addEventListener('click', function(){
+  if(!currentPoem) return;
+  var box = document.getElementById('poemMeaningBox');
+  box.style.display = '';
+  box.textContent = currentPoem.meaning;
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+  speak(currentPoem.meaning, 'zh-CN', 0.85);
+});
+document.getElementById('poemStopBtn').addEventListener('click', function(){
+  bumpUiToken();
+  document.querySelectorAll('.poem-line').forEach(function(el){ el.classList.remove('active'); });
+  document.getElementById('poemPlayer').style.display = 'none';
+  document.getElementById('poemGrid').style.display = '';
+  currentPoem = null;
+});
+
+/* ============ STORIES: 儿童故事 ============ */
+/* Original simple retellings inspired by ancient/public-domain folk tales
+   and fables (Aesop's Fables ~2500 years old; The Three Little Pigs / Little
+   Red Riding Hood are traditional European folk tales; Monkeys Fishing for
+   the Moon is an anonymous traditional Chinese folk tale) — not copied text
+   from any specific modern translation, so there are no copyright concerns.
+   Narration uses the same free browser text-to-speech as the rest of the
+   app (see pickVoice's natural/neural voice preference above); there is no
+   free way to embed an actual recorded human voice in a static web page. */
+var STORIES = [
+  {id:'guitu', emoji:'🐢', title:'龟兔赛跑', paragraphs:[
+    '森林里，兔子和乌龟要举行一场赛跑比赛。',
+    '兔子跑得飞快，一下子就把乌龟甩得老远，它想：乌龟这么慢，我睡一觉再跑也来得及！',
+    '于是兔子躺在大树下呼呼大睡起来。',
+    '乌龟虽然走得很慢，但它一步一步，从来没有停下来。',
+    '乌龟悄悄地超过了正在睡觉的兔子，一直爬到了终点。',
+    '兔子醒来的时候，乌龟已经赢得了比赛。小朋友，做事情要坚持到底，不能骄傲哦！'
+  ]},
+  {id:'sanzhuxiaozhu', emoji:'🐷', title:'三只小猪', paragraphs:[
+    '猪妈妈让三只小猪出去盖自己的房子。',
+    '猪大哥偷懒，用稻草盖了一间房子，很快就盖好了。',
+    '猪二哥用木头盖了房子，比猪大哥的结实一点。',
+    '猪小弟最勤劳，他用砖头一块一块地盖了一间又结实又漂亮的房子。',
+    '大灰狼来了，一口气就把稻草房子和木头房子吹倒了，猪大哥和猪二哥赶紧跑到猪小弟家里。',
+    '大灰狼怎么吹也吹不倒砖头房子，三只小猪在结实的房子里安全地生活下去了。'
+  ]},
+  {id:'xiaohongmao', emoji:'🧺', title:'小红帽', paragraphs:[
+    '小红帽要去看望生病的外婆，妈妈叮嘱她不要在路上贪玩。',
+    '在森林里，小红帽遇到了大灰狼，大灰狼假装很友好地和她说话。',
+    '大灰狼偷偷跑到外婆家，可是善良的猎人叔叔一直在附近巡逻。',
+    '猎人叔叔发现了大灰狼的坏主意，及时赶到外婆家，把外婆和小红帽都保护得好好的。',
+    '小红帽明白了，以后再也不和陌生人随便说话啦。'
+  ]},
+  {id:'houzilaoyueliang', emoji:'🐒', title:'猴子捞月亮', paragraphs:[
+    '一天晚上，小猴子看见井里有一个圆圆的月亮，它以为月亮掉进井里了。',
+    '小猴子赶紧叫来好朋友们，大家手拉着手，一个接一个地吊下井去捞月亮。',
+    '捞了半天，怎么也捞不到月亮，最小的猴子觉得很奇怪。',
+    '它抬起头一看，月亮好好地挂在天上呢！原来井里的月亮只是水中的影子呀。',
+    '猴子们哈哈大笑，一起抬头看着天上又大又圆的月亮。'
+  ]},
+  {id:'langlaile', emoji:'🐺', title:'狼来了', paragraphs:[
+    '有个放羊的孩子觉得很无聊，就大喊：狼来了！狼来了！',
+    '村民们听到喊声，都急忙跑来帮忙，可是根本没有狼，孩子哈哈大笑，觉得很好玩。',
+    '过了几天，孩子又喊了一次狼来了，村民们又跑来了，还是没有狼。',
+    '后来，狼真的来了，孩子拼命地喊狼来了，可是这次没有人再相信他了。',
+    '小朋友，我们要做诚实的孩子，不能说谎话哦。'
+  ]}
+];
+
+var currentStory = null;
+
+function renderStoryGrid(){
+  var grid = document.getElementById('storyGrid');
+  grid.innerHTML = '';
+  STORIES.forEach(function(story){
+    var card = document.createElement('div');
+    card.className = 'letter-card';
+    card.innerHTML =
+      '<span class="em">' + story.emoji + '</span>' +
+      '<div class="word">' + story.title + '</div>';
+    card.addEventListener('click', function(){ selectStory(story); });
+    grid.appendChild(card);
+  });
+}
+renderStoryGrid();
+
+function selectStory(story){
+  currentStory = story;
+  document.getElementById('storyGrid').style.display = 'none';
+  var player = document.getElementById('storyPlayer');
+  player.style.display = '';
+  document.getElementById('storyTitleLine').textContent = story.emoji + ' ' + story.title;
+  var box = document.getElementById('storyParasBox');
+  box.innerHTML = '';
+  story.paragraphs.forEach(function(para, idx){
+    var d = document.createElement('div');
+    d.className = 'story-para';
+    d.id = 'storypara-' + idx;
+    d.textContent = para;
+    box.appendChild(d);
+  });
+  reactMascot('storyMascot', 'happy', 'storyBubble', '故事开始啦～');
+  playStory(story);
+}
+
+function playStory(story){
+  var myToken = uiToken;
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+  var p = Promise.resolve();
+  story.paragraphs.forEach(function(para, idx){
+    p = p.then(function(){
+      if(myToken !== uiToken) return Promise.reject('cancelled');
+      document.querySelectorAll('.story-para').forEach(function(el){ el.classList.remove('active'); });
+      var el = document.getElementById('storypara-' + idx);
+      if(el){ el.classList.add('active'); el.scrollIntoView({behavior:'smooth', block:'center'}); }
+      return speak(para, 'zh-CN', 0.82);
+    });
+  });
+  p.then(function(){
+    if(myToken !== uiToken) return;
+    document.querySelectorAll('.story-para').forEach(function(el){ el.classList.remove('active'); });
+    addStars(3);
+    launchConfetti(70);
+    reactMascot('storyMascot', 'happy', 'storyBubble', '故事讲完啦，真棒！🎉');
+    showToast('故事讲完啦，喜欢的话再听一次吧！📖');
+  }).catch(function(){ /* cancelled by navigation, ignore */ });
+}
+
+document.getElementById('storyReplayBtn').addEventListener('click', function(){
+  if(currentStory) playStory(currentStory);
+});
+document.getElementById('storyStopBtn').addEventListener('click', function(){
+  bumpUiToken();
+  document.querySelectorAll('.story-para').forEach(function(el){ el.classList.remove('active'); });
+  document.getElementById('storyPlayer').style.display = 'none';
+  document.getElementById('storyGrid').style.display = '';
+  currentStory = null;
 });
 
 })();

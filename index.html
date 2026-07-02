@@ -83,11 +83,20 @@
   .card-letters{background:linear-gradient(160deg,var(--pink),var(--purple));}
   .card-numbers{background:linear-gradient(160deg,var(--blue),var(--green));}
   .card-songs{background:linear-gradient(160deg,var(--yellow),var(--orange));}
+  .card-poems{background:linear-gradient(160deg,var(--purple),var(--blue));}
+  .card-stories{background:linear-gradient(160deg,var(--orange),var(--pink));}
 
   .song-line{padding:7px 12px; border-radius:12px; transition:background .25s; margin-bottom:2px;}
   .song-line.active{background:#fff3d6;}
   .sl-en{display:block; font-weight:bold; color:var(--purple-d); font-size:16px;}
   .sl-cn{display:block; font-size:13px; color:#9a8fc0; margin-top:1px;}
+
+  .poem-line{padding:8px 12px; border-radius:12px; transition:background .25s; margin-bottom:4px; font-size:20px; font-weight:bold; color:var(--pink-d); letter-spacing:2px;}
+  .poem-line.active{background:#fff3d6;}
+  .poem-meta{font-size:13px; color:#9a8fc0; margin-bottom:10px;}
+
+  .story-para{padding:8px 10px; border-radius:12px; transition:background .25s; margin-bottom:6px; font-size:15px; line-height:1.8; color:var(--ink);}
+  .story-para.active{background:#fff3d6;}
 
   .footer-note{text-align:center; margin-top:26px; font-size:13px; color:#8b7fae;}
   .footer-note button{
@@ -281,6 +290,14 @@
         <span class="emoji">🎵</span>
         儿歌乐园<br><span style="font-size:14px;">中英文儿歌</span>
       </button>
+      <button class="big-card card-poems" data-go="poems">
+        <span class="emoji">📜</span>
+        诗词乐园<br><span style="font-size:14px;">经典古诗</span>
+      </button>
+      <button class="big-card card-stories" data-go="stories">
+        <span class="emoji">📖</span>
+        故事乐园<br><span style="font-size:14px;">睡前小故事</span>
+      </button>
     </div>
     <div class="footer-note">
       戴上耳机效果更好哦～ 点击卡片和按钮就能听到中文和英文发音<br>
@@ -413,6 +430,48 @@
       <div class="btn-row-actions">
         <button class="replay-btn" id="songReplayBtn">🔁 重新播放</button>
         <button class="hint-btn" id="songStopBtn">⏹ 换一首</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POEMS -->
+  <div class="screen" id="screen-poems">
+    <div class="back-row"><button class="icon-btn" data-go="home">⬅️</button></div>
+    <div style="text-align:center; margin-bottom:12px;">
+      <div style="font-size:16px; color:var(--purple-d); font-weight:bold;">选一首古诗，跟着一起读吧！📜</div>
+    </div>
+    <div class="letter-grid" id="poemGrid"></div>
+
+    <div class="quiz-box" id="poemPlayer" style="display:none; margin-top:18px;">
+      <div class="quiz-mascot" id="poemMascot">📜</div>
+      <div class="bubble" id="poemBubble">准备好了吗？</div>
+      <div class="quiz-prompt" id="poemTitleLine"></div>
+      <div id="poemLinesBox" style="text-align:center; max-width:440px; margin:10px auto 4px;"></div>
+      <div id="poemMeaningBox" style="text-align:left; max-width:440px; margin:14px auto 0; font-size:13px; color:#9a8fc0; background:#f5f1ff; border-radius:14px; padding:10px 14px; display:none;"></div>
+      <div class="btn-row-actions">
+        <button class="replay-btn" id="poemReplayBtn">🔁 重新朗读</button>
+        <button class="hint-btn" id="poemMeaningBtn">💡 讲讲意思</button>
+        <button class="hint-btn" id="poemStopBtn">⏹ 换一首</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STORIES -->
+  <div class="screen" id="screen-stories">
+    <div class="back-row"><button class="icon-btn" data-go="home">⬅️</button></div>
+    <div style="text-align:center; margin-bottom:12px;">
+      <div style="font-size:16px; color:var(--purple-d); font-weight:bold;">选一个小故事，听我讲给你听吧！📖</div>
+    </div>
+    <div class="letter-grid" id="storyGrid"></div>
+
+    <div class="quiz-box" id="storyPlayer" style="display:none; margin-top:18px;">
+      <div class="quiz-mascot" id="storyMascot">🦉</div>
+      <div class="bubble" id="storyBubble">准备好了吗？</div>
+      <div class="quiz-prompt" id="storyTitleLine"></div>
+      <div id="storyParasBox" style="text-align:left; max-width:460px; margin:10px auto 4px;"></div>
+      <div class="btn-row-actions">
+        <button class="replay-btn" id="storyReplayBtn">🔁 重新讲一遍</button>
+        <button class="hint-btn" id="storyStopBtn">⏹ 换一个</button>
       </div>
     </div>
   </div>
