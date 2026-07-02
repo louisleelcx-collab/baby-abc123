@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ABC和数字乐园 🎈</title>
+<style>
+  :root{
+    --pink:#ff6b9d; --pink-d:#e0508a;
+    --purple:#a685e2; --purple-d:#8a63cf;
+    --blue:#5ec8f8; --blue-d:#3aa8db;
+    --yellow:#ffd166; --yellow-d:#e8b33e;
+    --green:#7bd389; --green-d:#57b869;
+    --orange:#ff9a5a; --orange-d:#e87f3c;
+    --red:#ff6b6b; --red-d:#e05252;
+    --ink:#4a3a63;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{height:100%; margin:0;}
+  body{
+    font-family:'Comic Sans MS','Baloo 2','Chalkboard SE','PingFang SC','Microsoft YaHei',cursive,sans-serif;
+    background:linear-gradient(180deg,#bfe9ff 0%,#e4f6ff 40%,#fff3d6 100%);
+    background-size:100% 200%;
+    animation:skyShift 40s ease-in-out infinite;
+    overflow-x:hidden; color:var(--ink); min-height:100%;
+    position:relative;
+  }
+  @keyframes skyShift{ 0%,100%{background-position:0 0;} 50%{background-position:0 30%;} }
+  /* floating decorations */
+  .sky{position:fixed; inset:0; overflow:hidden; z-index:0; pointer-events:none;}
+  .cloud{position:absolute; font-size:48px; opacity:.85; animation:drift linear infinite;}
+  .mascot-float{position:absolute; font-size:40px; animation:bob 3.5s ease-in-out infinite;}
+  @keyframes drift{ from{transform:translateX(-10vw);} to{transform:translateX(110vw);} }
+  @keyframes bob{ 0%,100%{transform:translateY(0) rotate(-4deg);} 50%{transform:translateY(-18px) rotate(4deg);} }
+  @keyframes pop{ 0%{transform:scale(.4); opacity:0;} 70%{transform:scale(1.08);} 100%{transform:scale(1); opacity:1;} }
+  @keyframes shake{ 10%,90%{transform:translateX(-6px);} 20%,80%{transform:translateX(8px);} 30%,50%,70%{transform:translateX(-12px);} 40%,60%{transform:translateX(12px);} }
+  @keyframes twinkle{ 0%,100%{opacity:.3; transform:scale(.8);} 50%{opacity:1; transform:scale(1.2);} }
+  @keyframes floatUp{ from{transform:translateY(0) scale(1); opacity:1;} to{transform:translateY(-70px) scale(1.3); opacity:0;} }
+  @keyframes bounceReact{ 0%{transform:scale(1);} 30%{transform:scale(1.4) rotate(-8deg);} 60%{transform:scale(1.15) rotate(6deg);} 100%{transform:scale(1);} }
+  @keyframes glowPulse{ 0%,100%{box-shadow:0 5px 0 var(--yellow-d), 0 0 0 0 rgba(255,209,102,.7);} 50%{box-shadow:0 5px 0 var(--yellow-d), 0 0 0 10px rgba(255,209,102,0);} }
+  @keyframes modalIn{ 0%{transform:scale(.6) translateY(40px); opacity:0;} 100%{transform:scale(1) translateY(0); opacity:1;} }
+
+  #app{position:relative; z-index:1; max-width:900px; margin:0 auto; padding:14px 14px 40px;}
+
+  /* top bar */
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;}
+  .topbar .title{font-size:22px; font-weight:bold; color:var(--purple-d); text-shadow:1px 2px 0 #fff;}
+  .top-actions{display:flex; align-items:center; gap:8px;}
+  .pill{
+    display:flex; align-items:center; gap:6px; background:#fff; border-radius:999px;
+    padding:6px 12px; box-shadow:0 3px 0 #d8d8f0; font-weight:bold; font-size:16px;
+  }
+  .icon-btn{
+    width:42px; height:42px; border-radius:50%; border:none; background:#fff;
+    box-shadow:0 3px 0 #d8d8f0; font-size:20px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .icon-btn:active{transform:translateY(3px); box-shadow:none;}
+
+  /* screens */
+  .screen{display:none;}
+  .screen.active{display:block; animation:pop .35s ease;}
+
+  /* home */
+  .home-hero{text-align:center; margin:10px 0 16px;}
+  .home-hero h1{font-size:30px; margin:6px 0; color:var(--pink-d); text-shadow:2px 3px 0 #fff;}
+  .home-hero p{font-size:16px; color:var(--purple-d);}
+  .mascot-row{font-size:44px; margin:10px 0 18px; display:flex; justify-content:center; gap:10px;}
+  .mascot-row span{animation:bob 2.4s ease-in-out infinite;}
+  .mascot-row span:nth-child(2){animation-delay:.3s;}
+  .mascot-row span:nth-child(3){animation-delay:.6s;}
+  .mascot-row span:nth-child(4){animation-delay:.9s;}
+
+  .big-choice{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:18px; margin-top:10px;}
+  @media (max-width:560px){ .big-choice{grid-template-columns:1fr;} }
+  .big-card{
+    position:relative; border:none; border-radius:28px; padding:26px 14px; cursor:pointer;
+    color:#fff; font-size:22px; font-weight:bold; text-shadow:1px 2px 2px rgba(0,0,0,.15);
+    box-shadow:0 8px 0 rgba(0,0,0,.15); transition:transform .08s;
+  }
+  .big-card:active{transform:translateY(6px); box-shadow:0 2px 0 rgba(0,0,0,.15);}
+  .big-card .emoji{font-size:56px; display:block; margin-bottom:8px;}
+  .card-letters{background:linear-gradient(160deg,var(--pink),var(--purple));}
+  .card-numbers{background:linear-gradient(160deg,var(--blue),var(--green));}
+  .card-songs{background:linear-gradient(160deg,var(--yellow),var(--orange));}
+
+  .song-line{padding:7px 12px; border-radius:12px; transition:background .25s; margin-bottom:2px;}
+  .song-line.active{background:#fff3d6;}
+  .sl-en{display:block; font-weight:bold; color:var(--purple-d); font-size:16px;}
+  .sl-cn{display:block; font-size:13px; color:#9a8fc0; margin-top:1px;}
+
+  .footer-note{text-align:center; margin-top:26px; font-size:13px; color:#8b7fae;}
+  .footer-note button{
+    margin-top:8px; background:none; border:1px dashed #b7a8dd; color:#8b7fae; border-radius:12px;
+    padding:6px 12px; font-size:12px; cursor:pointer;
+  }
+
+  /* sub nav tabs */
+  .tabs{display:flex; gap:8px; flex-wrap:wrap; margin:14px 0;}
+  .tab-btn{
+    border:none; border-radius:16px; padding:10px 16px; font-size:15px; font-weight:bold;
+    cursor:pointer; background:#fff; color:var(--purple-d); box-shadow:0 3px 0 #d8d8f0;
+  }
+  .tab-btn.active{background:var(--purple); color:#fff; box-shadow:0 3px 0 var(--purple-d);}
+
+  .range-row{display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 18px;}
+  .range-btn{
+    border:none; border-radius:14px; padding:8px 14px; font-size:14px; font-weight:bold;
+    cursor:pointer; background:#fff; color:var(--blue-d); box-shadow:0 3px 0 #cfe9f5;
+  }
+  .range-btn.active{background:var(--blue); color:#fff; box-shadow:0 3px 0 var(--blue-d);}
+  .range-btn.locked{background:#f2f2f2; color:#b5aecb; box-shadow:0 3px 0 #e2ddec; cursor:not-allowed;}
+
+  /* letter learn grid */
+  .letter-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px;}
+  .letter-card{
+    background:#fff; border-radius:20px; padding:14px 6px; text-align:center; cursor:pointer;
+    box-shadow:0 5px 0 #e3ddf5; position:relative; transition:transform .08s;
+  }
+  .letter-card:active{transform:translateY(4px); box-shadow:0 1px 0 #e3ddf5;}
+  .letter-card .big-letter{font-size:34px; font-weight:bold; color:var(--pink-d);}
+  .letter-card .em{font-size:30px; display:block; margin:4px 0;}
+  .letter-card .word{font-size:12px; color:var(--purple-d); font-weight:bold;}
+  .letter-card .cn{font-size:11px; color:#9a8fc0;}
+
+  .number-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:8px;}
+  .number-card{padding:10px 4px;}
+  .number-card .big-letter{font-size:24px;}
+  .number-card .word{font-size:10px;}
+  .number-card .cn{font-size:12px;}
+
+  .song-btn{
+    display:block; margin:6px auto 18px; border:none; border-radius:18px; padding:12px 22px;
+    background:var(--yellow); color:#7a5b00; font-weight:bold; font-size:16px; cursor:pointer;
+    box-shadow:0 4px 0 var(--yellow-d);
+  }
+  .song-btn:active{transform:translateY(4px); box-shadow:none;}
+
+  /* quiz shared */
+  .quiz-box{
+    background:#fff; border-radius:26px; padding:26px 18px; text-align:center;
+    box-shadow:0 6px 0 #e3ddf5; margin-top:10px;
+  }
+  .quiz-prompt{font-size:18px; color:var(--purple-d); margin-bottom:6px; font-weight:bold;}
+  .quiz-mascot{font-size:52px; margin-bottom:2px; animation:bob 2s ease-in-out infinite; display:inline-block;}
+  .quiz-mascot.react{animation:bounceReact .6s ease;}
+  .bubble{
+    font-size:13px; color:var(--purple-d); background:#f5f1ff; display:inline-block;
+    padding:4px 12px; border-radius:12px; margin-bottom:10px; min-height:14px; font-weight:bold;
+  }
+  .quiz-target-emoji{font-size:64px; margin:6px 0 10px;}
+  .emoji-count-wrap{
+    display:flex; flex-wrap:wrap; gap:6px; justify-content:center; max-width:420px; margin:10px auto 18px;
+    min-height:70px; align-items:center;
+  }
+  .emoji-count-wrap span{font-size:30px; animation:pop .3s ease;}
+  .choice-row{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:8px;}
+  .choice-btn{
+    border:none; border-radius:18px; min-width:78px; padding:16px 10px; font-size:26px; font-weight:bold;
+    cursor:pointer; background:var(--green); color:#fff; box-shadow:0 5px 0 var(--green-d);
+  }
+  .choice-btn:active{transform:translateY(4px); box-shadow:none;}
+  .choice-btn.wrong{background:var(--red); box-shadow:0 5px 0 var(--red-d); animation:shake .4s;}
+  .choice-btn.correct{background:var(--yellow); box-shadow:0 5px 0 var(--yellow-d);}
+  .choice-btn.hint-glow{animation:glowPulse 1s ease 2;}
+  .btn-row-actions{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:14px;}
+  .replay-btn, .hint-btn{
+    border:none; color:#fff; border-radius:14px;
+    padding:8px 16px; font-size:14px; font-weight:bold; cursor:pointer;
+  }
+  .replay-btn{background:var(--blue); box-shadow:0 3px 0 var(--blue-d);}
+  .hint-btn{background:var(--orange); box-shadow:0 3px 0 var(--orange-d);}
+  .replay-btn:active, .hint-btn:active{transform:translateY(3px); box-shadow:none;}
+  .streak-line{margin-top:10px; font-size:13px; color:#9a8fc0;}
+
+  /* sequence grid (numbers & letters order game) */
+  .seq-grid{
+    display:grid; grid-template-columns:repeat(10,1fr); gap:5px; margin-top:14px;
+  }
+  @media (max-width:560px){ .seq-grid{grid-template-columns:repeat(5,1fr);} }
+  .seq-grid.letters-grid{grid-template-columns:repeat(9,1fr);}
+  @media (max-width:560px){ .seq-grid.letters-grid{grid-template-columns:repeat(6,1fr);} }
+  .seq-cell{
+    border:none; border-radius:10px; padding:10px 2px; font-size:15px; font-weight:bold;
+    background:#fff; color:var(--purple-d); box-shadow:0 3px 0 #e3ddf5; cursor:pointer;
+  }
+  .seq-cell.done{background:var(--green); color:#fff; box-shadow:0 3px 0 var(--green-d);}
+  .seq-cell.wrong{animation:shake .4s;}
+  .grid-status{text-align:center; margin:10px 0; font-size:15px; color:var(--purple-d); font-weight:bold;}
+
+  /* toast / floating particles */
+  .float-star{
+    position:fixed; font-size:30px; pointer-events:none; z-index:150;
+    animation:floatUp 1s ease forwards;
+  }
+  .toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%); background:#fff;
+    padding:10px 18px; border-radius:16px; box-shadow:0 4px 12px rgba(0,0,0,.15); font-weight:bold;
+    color:var(--purple-d); z-index:60; opacity:0; transition:opacity .3s; max-width:80vw; text-align:center;
+  }
+  .toast.show{opacity:1;}
+
+  canvas#confetti{position:fixed; inset:0; z-index:100; pointer-events:none;}
+
+  .back-row{display:flex; justify-content:flex-start; margin-bottom:4px;}
+
+  /* modal */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(70,50,100,.5); z-index:200;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal-box{
+    background:#fff; border-radius:28px; padding:28px 22px; max-width:380px; width:100%;
+    text-align:center; box-shadow:0 12px 0 rgba(0,0,0,.12); position:relative;
+    animation:modalIn .35s ease;
+  }
+  .modal-close{
+    position:absolute; top:10px; right:10px; width:32px; height:32px; border-radius:50%;
+    border:none; background:#f0ecfa; color:var(--purple-d); font-size:16px; cursor:pointer;
+  }
+  .modal-mascot{font-size:56px; margin-bottom:6px;}
+  .modal-title{font-size:20px; font-weight:bold; color:var(--pink-d); margin-bottom:8px;}
+  .modal-msg{font-size:14px; color:var(--purple-d); margin-bottom:18px; line-height:1.5;}
+  .modal-actions{display:flex; flex-direction:column; gap:10px;}
+  .modal-actions button{
+    border:none; border-radius:16px; padding:12px; font-size:15px; font-weight:bold; cursor:pointer;
+    color:#fff; box-shadow:0 4px 0 rgba(0,0,0,.15);
+  }
+  .modal-actions button:active{transform:translateY(3px); box-shadow:none;}
+  .modal-actions button.primary{background:linear-gradient(160deg,var(--pink),var(--purple));}
+  .modal-actions button.secondary{background:linear-gradient(160deg,var(--blue),var(--green));}
+  .modal-actions button.tertiary{background:#f0ecfa; color:var(--purple-d); box-shadow:0 4px 0 #ded7f2;}
+</style>
+</head>
+<body>
+
+<div class="sky" id="sky"></div>
+<canvas id="confetti"></canvas>
+<div id="toast" class="toast"></div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <button class="modal-close" id="modalCloseBtn">✕</button>
+    <div class="modal-mascot" id="modalMascot">🎉</div>
+    <div class="modal-title" id="modalTitle">太棒了！</div>
+    <div class="modal-msg" id="modalMsg"></div>
+    <div class="modal-actions" id="modalActions"></div>
+  </div>
+</div>
+
+<div id="app">
+
+  <div class="topbar">
+    <div class="title">🎈 ABC和数字乐园</div>
+    <div class="top-actions">
+      <div class="pill">⭐ <span id="starCount">0</span></div>
+      <button class="icon-btn" id="muteBtn" title="静音/开启声音">🔊</button>
+      <button class="icon-btn" id="musicBtn" title="背景音乐开/关">🎵</button>
+      <button class="icon-btn" id="homeBtn" title="回到首页">🏠</button>
+    </div>
+  </div>
+
+  <!-- HOME -->
+  <div class="screen active" id="screen-home">
+    <div class="home-hero">
+      <div class="mascot-row"><span>🐼</span><span>🦁</span><span>🐰</span><span>🐘</span></div>
+      <h1>你好，小朋友！</h1>
+      <p>一起玩游戏，学字母，学数字吧！</p>
+    </div>
+    <div class="big-choice">
+      <button class="big-card card-letters" data-go="letters">
+        <span class="emoji">🔤</span>
+        字母乐园<br><span style="font-size:14px;">学习 A - Z</span>
+      </button>
+      <button class="big-card card-numbers" data-go="numbers">
+        <span class="emoji">🔢</span>
+        数字王国<br><span style="font-size:14px;">学习 1 - 100</span>
+      </button>
+      <button class="big-card card-songs" data-go="songs">
+        <span class="emoji">🎵</span>
+        儿歌乐园<br><span style="font-size:14px;">中英文儿歌</span>
+      </button>
+    </div>
+    <div class="footer-note">
+      戴上耳机效果更好哦～ 点击卡片和按钮就能听到中文和英文发音<br>
+      <button id="resetBtn">重置星星</button>
+    </div>
+  </div>
+
+  <!-- LETTERS -->
+  <div class="screen" id="screen-letters">
+    <div class="back-row"><button class="icon-btn" data-go="home">⬅️</button></div>
+    <div class="tabs">
+      <button class="tab-btn active" data-lettab="learn">📖 认识字母</button>
+      <button class="tab-btn" data-lettab="quiz">🎯 字母小游戏</button>
+      <button class="tab-btn" data-lettab="order">🧩 字母排队</button>
+      <button class="tab-btn" data-lettab="case">🔠 大小写配对</button>
+    </div>
+
+    <div id="letterLearn">
+      <button class="song-btn" id="alphabetSongBtn">🎵 唱字母歌 A-Z</button>
+      <div class="letter-grid" id="letterGrid"></div>
+    </div>
+
+    <div id="letterQuiz" style="display:none;">
+      <div class="quiz-box">
+        <div class="quiz-mascot" id="letterMascot">🦊</div>
+        <div class="bubble" id="letterBubble">准备好了吗？</div>
+        <div class="quiz-prompt" id="letterQuizPrompt">听一听，找到正确的字母吧！</div>
+        <div class="quiz-target-emoji" id="letterQuizEmoji" style="display:none;"></div>
+        <div class="choice-row" id="letterChoiceRow"></div>
+        <div class="btn-row-actions">
+          <button class="replay-btn" id="letterReplayBtn">🔁 再听一次</button>
+          <button class="hint-btn" id="letterHintBtn">💡 提示一下</button>
+        </div>
+        <div class="streak-line" id="letterStreak">连续答对：0</div>
+      </div>
+    </div>
+
+    <div id="letterOrder" style="display:none;">
+      <div class="grid-status" id="letterOrderStatus">请找到字母：A</div>
+      <div class="seq-grid letters-grid" id="letterOrderBoard"></div>
+    </div>
+
+    <div id="letterCase" style="display:none;">
+      <div class="quiz-box">
+        <div class="quiz-mascot" id="caseMascot">🐸</div>
+        <div class="bubble" id="caseBubble">找找配对～</div>
+        <div class="quiz-prompt" id="caseQuizPrompt">哪个是它的好朋友？</div>
+        <div class="quiz-target-emoji" id="caseTargetLetter" style="font-weight:bold; color:var(--pink-d);"></div>
+        <div class="choice-row" id="caseChoiceRow"></div>
+        <div class="btn-row-actions">
+          <button class="replay-btn" id="caseReplayBtn">🔁 再听一次</button>
+          <button class="hint-btn" id="caseHintBtn">💡 提示一下</button>
+        </div>
+        <div class="streak-line" id="caseStreak">连续答对：0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NUMBERS -->
+  <div class="screen" id="screen-numbers">
+    <div class="back-row"><button class="icon-btn" data-go="home">⬅️</button></div>
+    <div class="tabs">
+      <button class="tab-btn active" data-numtab="learn">📖 认识数字</button>
+      <button class="tab-btn" data-numtab="count">🍎 数数游戏</button>
+      <button class="tab-btn" data-numtab="grid">🧩 数字连线</button>
+      <button class="tab-btn" data-numtab="hear">👂 听音辨数字</button>
+    </div>
+
+    <!-- learn 1-100 -->
+    <div id="numLearn">
+      <div class="range-row" id="numberDecadeRow"></div>
+      <button class="song-btn" id="numberSongBtn">🎵 数一数 1-100</button>
+      <div class="number-grid" id="numberLearnGrid"></div>
+    </div>
+
+    <!-- counting game -->
+    <div id="numCount" style="display:none;">
+      <div class="quiz-box">
+        <div class="quiz-mascot" id="countMascot">🐨</div>
+        <div class="bubble" id="countBubble">数一数看！</div>
+        <div class="quiz-prompt">数一数，一共有几个呢？</div>
+        <div class="emoji-count-wrap" id="countWrap"></div>
+        <div class="choice-row" id="countChoiceRow"></div>
+        <div class="btn-row-actions">
+          <button class="replay-btn" id="countReplayBtn">🔁 再听一次</button>
+          <button class="hint-btn" id="countHintBtn">💡 提示一下</button>
+        </div>
+        <div class="streak-line" id="countStreak">连续答对：0</div>
+      </div>
+    </div>
+
+    <!-- number sequence connect -->
+    <div id="numGrid" style="display:none;">
+      <div class="range-row" id="gridRangeRow"></div>
+      <div class="grid-status" id="gridStatus">请找到数字：1</div>
+      <div class="seq-grid" id="numGridBoard"></div>
+    </div>
+
+    <!-- hear and pick number -->
+    <div id="numHear" style="display:none;">
+      <div class="range-row" id="hearRangeRow"></div>
+      <div class="quiz-box">
+        <div class="quiz-mascot" id="hearMascot">🐧</div>
+        <div class="bubble" id="hearBubble">仔细听哦～</div>
+        <div class="quiz-prompt" id="hearPrompt">仔细听，是哪个数字？</div>
+        <div class="emoji-count-wrap" id="hearCountWrap" style="display:none;"></div>
+        <div class="choice-row" id="hearChoiceRow"></div>
+        <div class="btn-row-actions">
+          <button class="replay-btn" id="hearReplayBtn">🔁 再听一次</button>
+          <button class="hint-btn" id="hearHintBtn">💡 提示一下</button>
+        </div>
+        <div class="streak-line" id="hearStreak">连续答对：0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SONGS -->
+  <div class="screen" id="screen-songs">
+    <div class="back-row"><button class="icon-btn" data-go="home">⬅️</button></div>
+    <div style="text-align:center; margin-bottom:12px;">
+      <div style="font-size:16px; color:var(--purple-d); font-weight:bold;">点一首儿歌，一起唱起来吧！🎶</div>
+    </div>
+    <div class="letter-grid" id="songGrid"></div>
+
+    <div class="quiz-box" id="songPlayer" style="display:none; margin-top:18px;">
+      <div class="quiz-mascot" id="songMascot">🎤</div>
+      <div class="bubble" id="songBubble">准备好了吗？</div>
+      <div class="quiz-prompt" id="songTitleLine"></div>
+      <div id="songLyricsBox" style="text-align:left; max-width:440px; margin:10px auto 4px;"></div>
+      <div class="btn-row-actions">
+        <button class="replay-btn" id="songReplayBtn">🔁 重新播放</button>
+        <button class="hint-btn" id="songStopBtn">⏹ 换一首</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="./_engine.js"></script>
+</body>
+</html>
